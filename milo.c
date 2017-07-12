@@ -1,4 +1,4 @@
-/*** includes ***/ 
+/*** includes ***/
 
 #include <ctype.h>
 #include <errno.h>
@@ -6,6 +6,11 @@
 #include <stdlib.h>
 #include <termios.h>
 #include <unistd.h>
+
+/*** defines ***/
+
+#define CTRL_KEY(k) ((k) & 0x1f)
+//this definition sets the upper 3 bits of the character to 0 -- similar to what the cntrl key does
 
 /*** data ***/
 
@@ -15,6 +20,9 @@ struct termios orig_terminos;
 
 void die(const char *s){
     // a function to handle errors
+    write(STDOUT_FILENO, "\x1b[2J", 4);
+    write(STDOUT_FILENO, "\x1b[H", 3); 
+
     perror(s);
     exit(1);
 }
@@ -57,26 +65,51 @@ void enableRawMode(){
     }
 }
 
+char editorReadKey(){
+    int nread;
+    char c;
+    while((nread = read(STDIN_FILENO, &c, 1)) != 1){
+        if(nread == -1 && errno != EAGAIN){
+            die("read");
+        }
+    }
+    return c;
+}
+
+/*** output ***/
+
+void editorRefreshScreen(){
+    write(STDOUT_FILENO, "\x1b[2J", 4); 
+    //4 bytes are wrtten to the terminal first byte is \x1b the escape character (27 decimal)
+    //J command is Erase In Display - clears screen, takes argument beforehand (it is 2 here)
+    //2 means to clear entier screen, 1 means to clear up to cursor and 0 clears from cursor to end
+    //REF: VT100 escape sequences -- TODO: ncurses library to handle all terminals
+
+    write(STDOUT_FILENO, "\x1b[H", 3);
+    //Uses H command which takes in row and column to position screen - multiple args seperated with ';' default is top though
+}
+
+/*** input ***/
+
+void editorProcessKeypress(){
+    char c = editorReadKey();
+    switch(c){
+        case CTRL_KEY('q'):
+            write(STDOUT_FILENO, "\x1b[2J", 4);
+            write(STDOUT_FILENO, "\x1b[H", 3);
+            exit(0);
+            break;
+    }
+}
+
 /*** init ***/
 
 int main(){
     enableRawMode();
 
     while(1){
-        char c = '\0';
-
-        if(read(STDIN_FILENO, &c, 1) == -1 && errno != EAGAIN){
-            die("read");
-        }
-
-        if(iscntrl(c)){
-            printf("%d\r\n", c);
-        }else{
-            printf("%d ('%c')\r\n", c, c);
-        }
-        if(c=='q'){
-            break; // exit if a q is entered
-        }
+        editorRefreshScreen();
+        editorProcessKeypress();
     }
 
     return 0;
